@@ -20,6 +20,7 @@ export type NavViewId =
   | "failure-signature"
   | "causal-analysis"
   | "diagnosis"
+  | "resilience"
   | "reduction"
   | "reproduction"
   | "what-if"

@@ -12,7 +12,9 @@ import NetworkIntelligenceView from "./components/NetworkIntelligenceView";
 import FaultInjectionView from "./components/FaultInjectionView";
 import FailureDetectionView from "./components/FailureDetectionView";
 import DiagnosisView from "./components/DiagnosisView";
+import FailureInvestigationView from "./components/FailureInvestigationView";
 import CausalAnalysisView from "./components/CausalAnalysisView";
+import ResilienceAnalysisView from "./components/ResilienceAnalysisView";
 import ReductionView from "./components/ReductionView";
 import ReproductionView from "./components/ReproductionView";
 import WhatIfView from "./components/WhatIfView";
@@ -53,6 +55,7 @@ function NetworkBuilderWorkspace() {
 
   // Save Modal & Feedback State
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Backend connection state
@@ -356,49 +359,58 @@ function NetworkBuilderWorkspace() {
     <AppShell backendOnline={backendConnected}>
       {activeView === "network-builder" ? (
         <div className="flex flex-col h-full w-full overflow-hidden bg-slate-100 text-slate-800">
-          {/* Top Sub-Bar: Network Builder Title, Active Network, and [Save Network] */}
-          <div className="h-11 bg-white border-b border-slate-200 px-5 flex items-center justify-between shrink-0 z-10 select-none shadow-2xs">
+          {/* Top Sub-Bar: Network Builder Title, Description, Actions */}
+          <div className="h-12 bg-white border-b border-slate-200 px-5 flex items-center justify-between shrink-0 z-10 select-none shadow-2xs">
             {/* Left: View Identity */}
             <div className="flex items-center gap-3">
               <span className="font-bold text-sm text-slate-900 tracking-tight">
                 Network Builder
               </span>
               <span className="text-slate-300">|</span>
-              <span className="text-[11px] text-slate-500 hidden sm:inline">
-                Topology Editor & Device Configuration
+              <span className="text-xs text-slate-500 hidden sm:inline">
+                Create and configure the network used for analysis and testing
               </span>
             </div>
 
-            {/* Center: Active Network & Revision */}
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1 rounded text-xs">
-              <span className="text-slate-400 font-medium">Active:</span>
-              <span className="font-semibold text-slate-800 font-mono">
-                {currentRevision.name}
-              </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 font-medium">
-                rev {currentRevision.revisionNumber}.0
-              </span>
-            </div>
-
-            {/* Right: Save Network Button */}
-            <div className="flex items-center gap-3">
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2">
               {toastMessage && (
-                <div className="text-[11px] text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded animate-in fade-in slide-in-from-right-2 duration-150">
+                <div className="text-[11px] text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded animate-in fade-in duration-150">
                   {toastMessage}
                 </div>
               )}
 
               <button
-                onClick={() => setIsSaveModalOpen(true)}
-                className="px-3.5 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition cursor-pointer flex items-center gap-1.5 shadow-xs"
-                title="Save current topology snapshot"
+                onClick={handleClearCanvas}
+                className="px-2.5 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium transition cursor-pointer"
+                title="Clear canvas to create new network"
               >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                  <polyline points="17 21 17 13 7 13 7 21" />
-                  <polyline points="7 3 7 8 15 8" />
-                </svg>
-                <span>Save Network</span>
+                New Network
+              </button>
+
+              <button
+                onClick={() => setIsSaveModalOpen(true)}
+                className="px-2.5 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium transition cursor-pointer"
+                title="Save snapshot to catalog"
+              >
+                Save
+              </button>
+
+              <button
+                onClick={handleResetTopology}
+                className="px-2.5 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium transition cursor-pointer"
+                title="Reset to default 7-node baseline topology"
+              >
+                Reset
+              </button>
+
+              <button
+                onClick={() => setActiveView("network-intelligence")}
+                className="ml-2 px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1 shadow-xs"
+                title="Proceed to Path & Reachability analysis"
+              >
+                <span>Analyze Network</span>
+                <span>➔</span>
               </button>
             </div>
           </div>
@@ -465,13 +477,14 @@ function NetworkBuilderWorkspace() {
           {/* Bottom Canvas Controls Bar: Device Count & Zoom Controls */}
           <div className="h-9 bg-white border-t border-slate-200 px-5 flex items-center justify-between shrink-0 select-none text-xs text-slate-600">
             {/* Left: Topology Counts */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <span className="font-semibold text-slate-800">
-                Nodes: <span className="font-mono text-blue-600">{nodes.length}</span>
-              </span>
-              <span className="text-slate-300">•</span>
-              <span className="font-semibold text-slate-800">
-                Links: <span className="font-mono text-blue-600">{links.length}</span>
+                {nodes.length} Nodes • {links.length} Links •{" "}
+                {links.some((l) => l.status === "down") ? (
+                  <span className="text-rose-600 font-bold">Fault Injected</span>
+                ) : (
+                  <span className="text-emerald-600 font-semibold">All Systems Up</span>
+                )}
               </span>
               {isConnectingCable && (
                 <>
@@ -483,13 +496,24 @@ function NetworkBuilderWorkspace() {
               )}
             </div>
 
-            {/* Center: Helpful Status Tip */}
-            <div className="hidden md:flex items-center gap-2 text-slate-400 text-[11px]">
-              <span>Pan: Drag canvas background</span>
-              <span>•</span>
-              <span>Zoom: Scroll wheel</span>
-              <span>•</span>
-              <span>Delete: Backspace / Del</span>
+            {/* Center: Collapsible Help Button with Popover */}
+            <div className="relative">
+              <button
+                onClick={() => setIsHelpOpen((prev) => !prev)}
+                className="text-[11px] text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded hover:bg-slate-100 border border-slate-200 flex items-center gap-1 transition cursor-pointer"
+              >
+                <span>Shortcuts & Tips</span>
+                <span className="text-[9px]">▾</span>
+              </button>
+
+              {isHelpOpen && (
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 text-[11px] text-slate-600 whitespace-nowrap z-30 flex flex-col gap-1">
+                  <span>• Pan: Drag canvas background</span>
+                  <span>• Zoom: Scroll wheel</span>
+                  <span>• Delete: Select & press Backspace/Del</span>
+                  <span>• Wire: Click &apos;Cable&apos; then click 2 devices</span>
+                </div>
+              )}
             </div>
 
             {/* Right: Viewport Zoom Controls */}
@@ -542,24 +566,14 @@ function NetworkBuilderWorkspace() {
         <TestAndObserveView />
       ) : activeView === "network-intelligence" ? (
         <NetworkIntelligenceView />
-      ) : activeView === "fault-injection" ? (
-        <FaultInjectionView />
-      ) : activeView === "failure-detection" ? (
-        <FailureDetectionView />
-      ) : activeView === "diagnosis" ? (
-        <DiagnosisView />
-      ) : activeView === "causal-analysis" || activeView === "failure-signature" ? (
-        <CausalAnalysisView />
-      ) : activeView === "reduction" ? (
-        <ReductionView />
-      ) : activeView === "reproduction" ? (
-        <ReproductionView />
-      ) : activeView === "what-if" ? (
-        <WhatIfView />
+      ) : activeView === "diagnosis" || activeView === "fault-injection" || activeView === "failure-detection" ? (
+        <FailureInvestigationView />
+      ) : activeView === "resilience" || activeView === "causal-analysis" || activeView === "failure-signature" || activeView === "reduction" || activeView === "reproduction" || activeView === "what-if" ? (
+        <ResilienceAnalysisView />
       ) : activeView === "saved-networks" ? (
         <SavedNetworksView />
       ) : activeView === "history" ? (
-        <HistoryView onRunNewInvestigation={() => setActiveView("fault-injection")} />
+        <HistoryView onRunNewInvestigation={() => setActiveView("diagnosis")} />
       ) : (
         <ModulePlaceholder viewId={activeView} />
       )}

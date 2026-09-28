@@ -252,12 +252,12 @@ export default function TestAndObserveView() {
             </span>
           </div>
           <span className="text-slate-300">|</span>
-          <span className="text-[11px] font-medium text-slate-600 hidden md:inline">
-            Module 2: Intelligent Network Testing & Test Orchestration
+          <span className="text-[11px] font-medium text-slate-500 hidden md:inline">
+            Run network tests and observe system behavior
           </span>
         </div>
 
-        {/* Center: Mode Switch & Topology Consumer Badge */}
+        {/* Center: Mode Switch & Flow */}
         <div className="flex items-center gap-3">
           {/* Mode Pill Toggle */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 text-xs">
@@ -272,7 +272,7 @@ export default function TestAndObserveView() {
               <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-              <span>Automated Investigation</span>
+              <span>Automated</span>
             </button>
             <button
               onClick={() => setMode("manual")}
@@ -286,14 +286,8 @@ export default function TestAndObserveView() {
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
-              <span>Manual Testing</span>
+              <span>Manual</span>
             </button>
-          </div>
-
-          {/* Topology Badge */}
-          <div className="hidden lg:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded text-xs font-mono">
-            <span className="text-slate-400">Topology:</span>
-            <span className="font-semibold text-slate-800">{currentRevision.name}</span>
           </div>
         </div>
 
@@ -320,22 +314,11 @@ export default function TestAndObserveView() {
             <span>{isR2R3Down ? "Restore Link R2-R3" : "Sever Link R2-R3"}</span>
           </button>
 
-          {/* Builder Link */}
           <button
-            onClick={() => setActiveView("network-builder")}
-            className="px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded transition cursor-pointer flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-            <span>Builder</span>
-          </button>
-
-          <button
-            onClick={() => setActiveView("fault-injection")}
+            onClick={() => setActiveView("diagnosis")}
             className="px-3.5 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1 shadow-xs"
           >
-            Proceed to Fault Injection (Module 3) ➔
+            Investigate Failure ➔
           </button>
         </div>
       </div>
@@ -345,9 +328,9 @@ export default function TestAndObserveView() {
       {/* --------------------------------------------------------------------- */}
       <div className="flex-1 flex overflow-hidden p-3 gap-3 min-h-0">
         {/* =================================================================== */}
-        {/* LEFT COLUMN (44%): Network Preview & Live Simulation Timeline */}
+        {/* LEFT COLUMN (62%): Network Preview & Live Simulation Timeline */}
         {/* =================================================================== */}
-        <div className="w-[44%] h-full flex flex-col gap-3 min-w-0">
+        <div className="w-[62%] h-full flex flex-col gap-3 min-w-0">
           {/* Reusable Network Preview Container */}
           <div className="flex-1 min-h-[280px] bg-white border border-slate-200 rounded-lg overflow-hidden shadow-2xs flex flex-col">
             <NetworkPreview

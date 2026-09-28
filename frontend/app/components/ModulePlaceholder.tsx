@@ -155,6 +155,17 @@ const MODULE_DEFINITIONS: Record<NavViewId, ModuleMeta> = {
       "Blast radius scope classification (None, Localized, Partitioned, Widespread)",
     ],
   },
+  "resilience": {
+    category: "ANALYSIS",
+    title: "Resilience Analysis",
+    workflowStep: 10,
+    description: "Causal resilience, signature fingerprinting, minimal reduction, and multi-trial reproduction.",
+    plannedCapabilities: [
+      "Immutable failure signature generation",
+      "Deterministic causal dependency DAG extraction",
+      "Delta debugging topology reduction and 100% reproduction",
+    ],
+  },
   "history": {
     category: "EXPERIMENTS",
     title: "Experiment History",
