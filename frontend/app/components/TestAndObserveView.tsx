@@ -24,10 +24,13 @@ export default function TestAndObserveView() {
   const defaultSource = nodes.find((n) => n.id === "PC1")?.id || nodes[0]?.id || "PC1";
   const defaultDest = nodes.find((n) => n.id === "Server")?.id || nodes[nodes.length - 1]?.id || "Server";
 
-  const [selectedSource, setSelectedSource] = useState(defaultSource);
-  const [selectedDestination, setSelectedDestination] = useState(defaultDest);
+  const [selectedSource] = useState(defaultSource);
+  const [selectedDestination] = useState(defaultDest);
   const [mode, setMode] = useState<"automated" | "manual">("automated");
-  const [activeTab, setActiveTab] = useState<"campaign" | "library">("campaign");
+
+  // Secondary panel view: history vs library vs none
+  const [secondaryTab, setSecondaryTab] = useState<"history" | "library">("history");
+  const [showEvidenceDetails, setShowEvidenceDetails] = useState(false);
 
   // Campaign state
   const [campaign, setCampaign] = useState<TestCampaign | null>(null);
@@ -143,7 +146,6 @@ export default function TestAndObserveView() {
         break;
       }
       currentCamp = updated;
-      // Smooth pacing interval between test executions for visual presentation
       await new Promise((r) => setTimeout(r, 650));
     }
 
@@ -201,7 +203,7 @@ export default function TestAndObserveView() {
           const newTop = await topRes.json();
           setCurrentNetwork(newTop);
         }
-        showToast(isR2R3Down ? "Link R2-R3 restored to UP." : "FAULT INJECTED: Link R2-R3 severed (DOWN).");
+        showToast(isR2R3Down ? "Link R2-R3 restored to UP." : "CONTROLLED FAULT: Link R2-R3 severed (DOWN).");
       }
     } catch (err) {
       console.error("Fault toggle failed:", err);
@@ -227,135 +229,168 @@ export default function TestAndObserveView() {
     }
   };
 
-  // Inspect selected test result (or the latest executed)
+  // Current active / selected test result
+  const executedCount = campaign?.executed_tests.length || 0;
   const currentTestResult: TestResult | null =
-    campaign && campaign.executed_tests.length > 0
+    campaign && executedCount > 0
       ? selectedTestIndex !== null && campaign.executed_tests[selectedTestIndex]
         ? campaign.executed_tests[selectedTestIndex]
-        : campaign.executed_tests[campaign.executed_tests.length - 1]
+        : campaign.executed_tests[executedCount - 1]
       : null;
 
   // Active events from selected test simulation
   const timelineEvents: ProbeEvent[] = currentTestResult?.simulation_result?.all_events || [];
 
+  // Determine if failure was detected
+  const isFailureDetected =
+    currentTestResult?.failure_detected ||
+    currentTestResult?.status === "FAILED" ||
+    (currentTestResult?.simulation_result?.packet_loss_percentage ?? 0) > 0 ||
+    Boolean(campaign?.failure_handoff);
+
+  // Next recommendation from campaign or fallback
+  const nextRec = campaign?.next_test_recommendation;
+
+  // Next test display details
+  const nextTestName = nextRec?.name || (executedCount === 0 ? "Baseline Connectivity" : "Primary Path Analysis");
+  const nextTestReason = nextRec?.reason || (executedCount === 0
+    ? "Establish baseline end-to-end connectivity and measure packet delivery and latency."
+    : "Baseline connectivity succeeded. Analyze the active forwarding path.");
+
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden bg-slate-100 text-slate-800">
-      {/* --------------------------------------------------------------------- */}
-      {/* TOP HEADER BAR */}
-      {/* --------------------------------------------------------------------- */}
+    <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50 text-slate-800">
+      {/* =================================================================== */}
+      {/* 1. TOP HEADER BAR */}
+      {/* =================================================================== */}
       <div className="h-12 bg-white border-b border-slate-200 px-5 flex items-center justify-between shrink-0 select-none shadow-2xs z-10">
+        {/* Left: View Identity */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
             <span className="font-bold text-sm text-slate-900 tracking-tight">
               Test & Observe
             </span>
           </div>
           <span className="text-slate-300">|</span>
-          <span className="text-[11px] font-medium text-slate-500 hidden md:inline">
+          <span className="text-xs text-slate-500 hidden md:inline">
             Run network tests and observe system behavior
           </span>
         </div>
 
-        {/* Center: Mode Switch & Flow */}
-        <div className="flex items-center gap-3">
-          {/* Mode Pill Toggle */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 text-xs">
-            <button
-              onClick={() => setMode("automated")}
-              className={`px-3 py-1 rounded font-medium text-[11px] transition cursor-pointer flex items-center gap-1.5 ${
-                mode === "automated"
-                  ? "bg-white text-blue-700 font-semibold shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-              <span>Automated</span>
-            </button>
-            <button
-              onClick={() => setMode("manual")}
-              className={`px-3 py-1 rounded font-medium text-[11px] transition cursor-pointer flex items-center gap-1.5 ${
-                mode === "manual"
-                  ? "bg-white text-blue-700 font-semibold shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-              <span>Manual</span>
-            </button>
-          </div>
+        {/* Center: Mode Switch (Automated / Manual) */}
+        <div className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 text-xs">
+          <button
+            onClick={() => setMode("automated")}
+            className={`px-3 py-1 rounded font-medium text-[11px] transition cursor-pointer flex items-center gap-1.5 ${
+              mode === "automated"
+                ? "bg-white text-blue-700 font-semibold shadow-2xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            <span>Automated</span>
+          </button>
+          <button
+            onClick={() => setMode("manual")}
+            className={`px-3 py-1 rounded font-medium text-[11px] transition cursor-pointer flex items-center gap-1.5 ${
+              mode === "manual"
+                ? "bg-white text-blue-700 font-semibold shadow-2xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            <span>Manual</span>
+          </button>
         </div>
 
-        {/* Right Action Controls */}
-        <div className="flex items-center gap-2">
+        {/* Right: Flow & Feedback */}
+        <div className="flex items-center gap-3">
           {toastMessage && (
-            <div className="text-[11px] text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded animate-in fade-in duration-150">
+            <div className="text-[11px] text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded animate-in fade-in duration-150">
               {toastMessage}
             </div>
           )}
 
-          {/* Controlled Fault Injector Toggle */}
-          <button
-            onClick={handleToggleR2R3Fault}
-            disabled={isLoading}
-            className={`px-3 py-1.5 text-xs font-medium rounded border transition cursor-pointer flex items-center gap-1.5 ${
-              isR2R3Down
-                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
-                : "bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200"
-            }`}
-            title="Toggle R2-R3 link fault status for scenario testing"
-          >
-            <span className={`w-2 h-2 rounded-full ${isR2R3Down ? "bg-emerald-500" : "bg-rose-500"}`} />
-            <span>{isR2R3Down ? "Restore Link R2-R3" : "Sever Link R2-R3"}</span>
-          </button>
+          <div className="text-xs text-slate-500 font-mono hidden sm:flex items-center gap-1.5">
+            <span>Target:</span>
+            <span className="font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+              {selectedSource} ➔ {selectedDestination}
+            </span>
+          </div>
 
-          <button
-            onClick={() => setActiveView("diagnosis")}
-            className="px-3.5 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1 shadow-xs"
-          >
-            Investigate Failure ➔
-          </button>
+          {/* Quick Handoff shortcut if failure observed */}
+          {isFailureDetected && (
+            <button
+              onClick={() => setActiveView("diagnosis")}
+              className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded transition flex items-center gap-1 shadow-xs animate-pulse"
+              title="Navigate to Failure Investigation module"
+            >
+              <span>Investigate Failure ➔</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* --------------------------------------------------------------------- */}
-      {/* MAIN TWO-COLUMN WORKSPACE */}
-      {/* --------------------------------------------------------------------- */}
+      {/* =================================================================== */}
+      {/* 2. MAIN WORKSPACE (Left ~62% Topology & Timeline | Right ~38% Focused Test) */}
+      {/* =================================================================== */}
       <div className="flex-1 flex overflow-hidden p-3 gap-3 min-h-0">
-        {/* =================================================================== */}
-        {/* LEFT COLUMN (62%): Network Preview & Live Simulation Timeline */}
-        {/* =================================================================== */}
+        {/* ================================================================= */}
+        {/* LEFT COLUMN: Network Topology (Top) + Live Probe Timeline (Bottom) */}
+        {/* ================================================================= */}
         <div className="w-[62%] h-full flex flex-col gap-3 min-w-0">
-          {/* Reusable Network Preview Container */}
-          <div className="flex-1 min-h-[280px] bg-white border border-slate-200 rounded-lg overflow-hidden shadow-2xs flex flex-col">
+          {/* Top: Large Network Topology Preview */}
+          <div className="flex-1 min-h-[300px] bg-white border border-slate-200 rounded-lg overflow-hidden shadow-2xs flex flex-col">
+            <div className="h-8 px-3.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between text-xs shrink-0 select-none">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-800 tracking-tight">Network Topology</span>
+                <span className="text-slate-300">•</span>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {nodes.length} Devices • {links.length} Links
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 text-[11px]">
+                {isR2R3Down ? (
+                  <span className="flex items-center gap-1.5 font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                    <span>Link R2-R3 DOWN</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>All Up</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
             <NetworkPreview
               network={currentNetwork}
-              title="NETWORK TOPOLOGY PREVIEW"
-              subtitle={
-                currentTestResult
-                  ? `Active Path: ${currentTestResult.observed_path.join(" → ")}`
-                  : "Read-Only Topology Consumer"
-              }
+              title=""
+              subtitle=""
+              highlightedPath={currentTestResult?.observed_path || ["PC1", "R1", "R2", "R3", "Server"]}
               className="h-full flex-1"
             />
           </div>
 
-          {/* Bottom Left: Live Probe Simulation Event Timeline */}
-          <div className="h-[260px] bg-white border border-slate-200 rounded-lg p-3.5 flex flex-col min-h-0 shadow-2xs">
+          {/* Bottom: Live Probe / Packet Events Timeline */}
+          <div className="h-[210px] bg-white border border-slate-200 rounded-lg p-3.5 flex flex-col min-h-0 shadow-2xs shrink-0">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 shrink-0">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                <span className="w-2 h-2 rounded-full bg-blue-600" />
                 <span className="text-xs font-bold text-slate-900 tracking-tight">
-                  LIVE PACKET / PROBE EVENT TIMELINE
+                  LIVE PROBE / PACKET EVENTS
                 </span>
               </div>
+
               {currentTestResult && (
-                <div className="flex items-center gap-2 font-mono text-[11px]">
+                <div className="flex items-center gap-2 text-xs font-mono">
                   <span
                     className={`px-2 py-0.5 rounded font-bold ${
                       currentTestResult.status === "PASSED"
@@ -363,54 +398,53 @@ export default function TestAndObserveView() {
                         : "bg-rose-50 text-rose-700 border border-rose-200"
                     }`}
                   >
-                    {currentTestResult.status} ({currentTestResult.actual_result})
+                    {currentTestResult.status === "PASSED" ? "PASS" : "FAILURE DETECTED"} ({currentTestResult.actual_result})
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Event List */}
+            {/* Event List or Empty State */}
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 font-mono text-[11px]">
               {timelineEvents.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs italic gap-1.5">
-                  <svg className="w-5 h-5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <circle cx="12" cy="12" r="10" />
-                    <polyline points="12 6 12 12 16 14" />
-                  </svg>
-                  <span>No probe simulation events yet. Execute a test to observe packets.</span>
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs italic gap-1">
+                  <span>No probe simulation events yet. Click &quot;Execute Test&quot; to observe packets.</span>
                 </div>
               ) : (
                 timelineEvents.map((evt) => (
                   <div
                     key={`${evt.sequence}-${evt.packet_id}`}
-                    className={`p-2 rounded border flex items-start gap-2.5 transition ${
+                    className={`p-1.5 px-2.5 rounded border flex items-center justify-between text-xs transition ${
                       evt.event_type === "DROPPED"
-                        ? "bg-rose-50/70 border-rose-200 text-rose-900"
+                        ? "bg-rose-50 border-rose-200 text-rose-900"
                         : evt.event_type === "RECEIVED"
-                        ? "bg-emerald-50/70 border-emerald-200 text-emerald-900"
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-900"
                         : "bg-slate-50 border-slate-200 text-slate-800"
                     }`}
                   >
-                    <span className="text-[10px] text-slate-400 w-12 shrink-0">
-                      +{evt.timestamp_ms}ms
-                    </span>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${
-                        evt.event_type === "DROPPED"
-                          ? "bg-rose-200 text-rose-800"
-                          : evt.event_type === "RECEIVED"
-                          ? "bg-emerald-200 text-emerald-800"
-                          : "bg-slate-200 text-slate-700"
-                      }`}
-                    >
-                      {evt.event_type}
-                    </span>
-                    <div className="flex-1 min-w-0 flex flex-col">
-                      <span className="font-semibold text-slate-900 truncate">
-                        {evt.packet_id}: {evt.current_node} {evt.next_node ? `→ ${evt.next_node}` : ""}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-400 w-10 shrink-0">
+                        +{evt.timestamp_ms}ms
                       </span>
-                      <span className="text-[10px] text-slate-500 leading-tight">
+                      <span className="font-semibold text-slate-900">
+                        {evt.current_node} {evt.next_node ? `➔ ${evt.next_node}` : ""}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-500 hidden sm:inline">
                         {evt.details}
+                      </span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${
+                          evt.event_type === "DROPPED"
+                            ? "bg-rose-200 text-rose-800"
+                            : evt.event_type === "RECEIVED"
+                            ? "bg-emerald-200 text-emerald-800"
+                            : "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {evt.event_type === "DROPPED" ? "✕ DROPPED" : evt.event_type === "RECEIVED" ? "✓ RECEIVED" : "➔ FORWARD"}
                       </span>
                     </div>
                   </div>
@@ -420,407 +454,366 @@ export default function TestAndObserveView() {
           </div>
         </div>
 
-        {/* =================================================================== */}
-        {/* RIGHT COLUMN (56%): Intelligent Test Campaign & Orchestration */}
-        {/* =================================================================== */}
-        <div className="flex-1 h-full bg-white border border-slate-200 rounded-lg flex flex-col min-w-0 overflow-hidden shadow-2xs">
-          {/* Top Campaign Control Header */}
-          <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="font-bold text-sm text-slate-900">
-                  {campaign?.name || "Campus Network Resilience Campaign"}
-                </span>
+        {/* ================================================================= */}
+        {/* RIGHT COLUMN: Focused Next Test / Result Panel + Secondary Tabs */}
+        {/* ================================================================= */}
+        <div className="w-[38%] h-full flex flex-col gap-3 min-w-0">
+          {/* --------------------------------------------------------------- */}
+          {/* PRIMARY PANEL: NEXT TEST or TEST RESULT */}
+          {/* --------------------------------------------------------------- */}
+          <div className="flex-1 bg-white border border-slate-200 rounded-lg p-5 flex flex-col justify-between shadow-2xs overflow-y-auto">
+            <div className="flex flex-col gap-3.5">
+              {/* Header Label: Test Result or Next Test */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      currentTestResult ? "bg-emerald-600" : "bg-blue-600"
+                    }`}
+                  />
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">
+                    {currentTestResult ? "CURRENT TEST RESULT" : "NEXT TEST"}
+                  </span>
+                </div>
+
                 <span
-                  className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase border ${
-                    campaign?.status === "COMPLETED"
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : campaign?.status === "RUNNING"
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : "bg-slate-100 text-slate-600 border-slate-300"
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                    currentTestResult
+                      ? currentTestResult.status === "PASSED"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-rose-100 text-rose-800"
+                      : "bg-blue-50 text-blue-700 border border-blue-200"
                   }`}
                 >
-                  {campaign?.status || "NOT_STARTED"}
+                  {currentTestResult
+                    ? currentTestResult.status === "PASSED"
+                      ? "● PASS"
+                      : "● FAILURE DETECTED"
+                    : "READY"}
                 </span>
               </div>
 
-              {/* Campaign Control Buttons */}
-              <div className="flex items-center gap-2">
-                {/* Execute Next Step (Single Step) */}
+              {/* CASE A: SHOW TEST RESULT (If a test was executed) */}
+              {currentTestResult ? (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 leading-snug">
+                      {currentTestResult.name}
+                    </h3>
+                    <div className="text-xs text-slate-500 font-mono mt-0.5">
+                      Flow: {currentTestResult.source} ➔ {currentTestResult.destination}
+                    </div>
+                  </div>
+
+                  {/* Clean Result Metrics Grid */}
+                  <div className="grid grid-cols-3 gap-2 text-xs pt-1">
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-center">
+                      <span className="text-[10px] text-slate-500 block uppercase font-semibold">Packets</span>
+                      <span className="text-sm font-bold text-slate-900 mt-0.5 block">
+                        {currentTestResult.simulation_result?.probes_received ?? (currentTestResult.status === "PASSED" ? 3 : 0)} / {currentTestResult.simulation_result?.probes_sent ?? 3}
+                      </span>
+                    </div>
+
+                    <div className={`p-2.5 rounded-lg border text-center ${
+                      (currentTestResult.simulation_result?.packet_loss_percentage ?? (currentTestResult.status === "PASSED" ? 0 : 100)) > 0
+                        ? "bg-rose-50 border-rose-200 text-rose-900"
+                        : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                    }`}>
+                      <span className="text-[10px] uppercase font-semibold block opacity-75">Packet Loss</span>
+                      <span className="text-sm font-bold mt-0.5 block">
+                        {currentTestResult.simulation_result?.packet_loss_percentage ?? (currentTestResult.status === "PASSED" ? 0 : 100)}%
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-center">
+                      <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                        {isFailureDetected ? "Drop Point" : "Avg RTT"}
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 mt-0.5 block font-mono">
+                        {isFailureDetected
+                          ? (campaign?.failure_handoff?.drop_link || "R2 → R3")
+                          : (currentTestResult.simulation_result?.avg_rtt_ms ? `~${Math.round(currentTestResult.simulation_result.avg_rtt_ms)}ms` : "~42ms")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Failure Handoff Banner (if failure occurred) */}
+                  {isFailureDetected ? (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900 space-y-1 mt-1">
+                      <div className="flex items-center justify-between font-bold">
+                        <span>FAILURE DETECTED</span>
+                        <span className="font-mono text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
+                          Link R2-R3
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-rose-800">
+                        Communication severed at R2 ➔ R3 transition. Empirical evidence is ready for diagnosis.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {/* Transition to Next Test (if more tests exist in campaign) */}
+                  {nextRec && campaign?.status !== "COMPLETED" && (
+                    <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500 font-semibold uppercase font-mono">
+                          Up Next:
+                        </span>
+                        <span className="text-blue-700 font-medium font-mono text-[10px]">
+                          Confidence: {nextRec.confidence}
+                        </span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-800">
+                        {nextRec.name}
+                      </div>
+                      <p className="text-[11px] text-slate-600 leading-snug">
+                        {nextRec.reason}
+                      </p>
+
+                      {/* Expandable Evidence toggle */}
+                      {nextRec.evidence && nextRec.evidence.length > 0 && (
+                        <div className="pt-0.5">
+                          <button
+                            onClick={() => setShowEvidenceDetails((prev) => !prev)}
+                            className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                          >
+                            {showEvidenceDetails ? "Hide Evidence ▴" : "View Evidence ▾"}
+                          </button>
+                          {showEvidenceDetails && (
+                            <div className="mt-1 p-2 bg-slate-50 border border-slate-200 rounded text-[10px] text-slate-600 space-y-0.5">
+                              {nextRec.evidence.map((ev, i) => (
+                                <div key={i}>✓ {ev}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* CASE B: INITIAL READY STATE (No test executed yet) */
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 leading-snug">
+                      {nextTestName}
+                    </h3>
+                    <div className="text-xs text-slate-500 font-mono mt-0.5">
+                      Target Flow: {selectedSource} ➔ {selectedDestination}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    &quot;{nextTestReason}&quot;
+                  </p>
+
+                  <div className="text-[11px] text-slate-400 italic">
+                    No previous tests executed in this session.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Actions of Primary Panel */}
+            <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
+              {/* If Failure Detected: Offer Direct Handoff to Diagnosis */}
+              {isFailureDetected ? (
+                <button
+                  onClick={() => setActiveView("diagnosis")}
+                  className="w-full py-2.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <span>Investigate Failure</span>
+                  <span>➔</span>
+                </button>
+              ) : null}
+
+              {/* Main Execution Button */}
+              {campaign?.status !== "COMPLETED" && (
                 <button
                   onClick={() => handleExecuteStep()}
-                  disabled={isLoading || isAutoRunning || campaign?.status === "COMPLETED"}
-                  className="px-3.5 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  title="Execute the next system-selected test"
+                  disabled={isLoading || isAutoRunning}
+                  className="w-full py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
                 >
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polygon points="5 3 19 12 5 21 5 3" />
                   </svg>
-                  <span>Execute Next Test</span>
+                  <span>
+                    {executedCount === 0 ? "Execute Test" : "Continue to Next Test"}
+                  </span>
                 </button>
+              )}
 
-                {/* Auto Run All */}
+              {/* Secondary Controls (Subtle & Compact) */}
+              <div className="flex items-center justify-between text-xs pt-1">
                 <button
                   onClick={isAutoRunning ? handleStopAutoRun : handleStartAutoRun}
                   disabled={isLoading || campaign?.status === "COMPLETED"}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
-                    isAutoRunning
-                      ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
-                      : "bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200"
-                  }`}
-                  title="Step through all recommended tests automatically"
+                  className="text-slate-600 hover:text-slate-900 text-[11px] font-medium transition cursor-pointer"
                 >
-                  {isAutoRunning ? (
-                    <>
-                      <span className="w-2 h-2 rounded-full bg-amber-600 animate-ping" />
-                      <span>Pause Auto-Run</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                      </svg>
-                      <span>Auto Run All</span>
-                    </>
-                  )}
+                  {isAutoRunning ? "⏸ Pause Auto-Run" : "▶ Auto Run All"}
                 </button>
 
-                {/* Reset Campaign */}
                 <button
                   onClick={handleResetCampaign}
                   disabled={isLoading || isAutoRunning}
-                  className="px-2.5 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs font-medium transition cursor-pointer"
-                  title="Clear executed tests and start over"
+                  className="text-slate-400 hover:text-slate-700 text-[11px] transition cursor-pointer"
                 >
-                  Reset
+                  Reset Campaign
                 </button>
+              </div>
+
+              {/* Auto Run Progress Mini-Stepper (only if active) */}
+              {isAutoRunning && (
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-900 flex items-center justify-between animate-pulse">
+                  <span>Auto-stepping through campaign...</span>
+                  <span className="font-mono font-bold">Step #{executedCount + 1}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* --------------------------------------------------------------- */}
+          {/* CONTROLLED TEST CONDITION PANEL (Visually distinct fault action) */}
+          {/* --------------------------------------------------------------- */}
+          <div className="bg-slate-50/80 border border-dashed border-slate-300 rounded-lg p-3 flex items-center justify-between text-xs shrink-0 select-none">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-wider">
+                CONTROLLED TEST CONDITION
+              </span>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="font-mono font-bold text-slate-800">Link: R2 ↔ R3</span>
+                <span className="text-slate-300">•</span>
+                <span
+                  className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded ${
+                    isR2R3Down
+                      ? "bg-rose-100 text-rose-800"
+                      : "bg-emerald-100 text-emerald-800"
+                  }`}
+                >
+                  {isR2R3Down ? "DOWN" : "UP"}
+                </span>
               </div>
             </div>
 
-            {/* Endpoints & Subtabs */}
-            <div className="flex items-center justify-between text-xs pt-1">
-              <div className="flex items-center gap-3 text-slate-600">
-                <span className="font-semibold text-slate-700">Probe Endpoints:</span>
-                <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 font-semibold text-slate-900">
-                  {campaign?.source || selectedSource} ➔ {campaign?.destination || selectedDestination}
-                </span>
-                <span className="text-slate-400">
-                  Tests Completed:{" "}
-                  <span className="font-bold text-slate-800 font-mono">
-                    {campaign?.executed_tests.length || 0}
-                  </span>
-                </span>
-              </div>
+            <button
+              onClick={handleToggleR2R3Fault}
+              disabled={isLoading}
+              className={`px-3 py-1.5 rounded text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
+                isR2R3Down
+                  ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
+                  : "bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200"
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isR2R3Down ? "bg-emerald-500" : "bg-rose-500"}`} />
+              <span>{isR2R3Down ? "Restore Link R2-R3" : "Sever Link R2-R3"}</span>
+            </button>
+          </div>
 
-              {/* View Subtabs */}
-              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded border border-slate-200">
+          {/* --------------------------------------------------------------- */}
+          {/* SECONDARY SECTION: TABS FOR TEST HISTORY & TEST LIBRARY */}
+          {/* --------------------------------------------------------------- */}
+          <div className="h-[210px] bg-white border border-slate-200 rounded-lg flex flex-col min-h-0 shadow-2xs shrink-0 overflow-hidden">
+            {/* Tab Switcher */}
+            <div className="h-8 border-b border-slate-200 bg-slate-50 px-3 flex items-center justify-between text-xs select-none shrink-0">
+              <div className="flex items-center gap-1 bg-slate-200 p-0.5 rounded text-[11px]">
                 <button
-                  onClick={() => setActiveTab("campaign")}
-                  className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
-                    activeTab === "campaign"
-                      ? "bg-white text-slate-900 font-semibold shadow-2xs"
+                  onClick={() => setSecondaryTab("history")}
+                  className={`px-2.5 py-0.5 rounded transition cursor-pointer font-medium ${
+                    secondaryTab === "history"
+                      ? "bg-white text-slate-900 font-bold shadow-2xs"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
-                  Campaign Progression
+                  Test History ({executedCount})
                 </button>
                 <button
-                  onClick={() => setActiveTab("library")}
-                  className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
-                    activeTab === "library"
-                      ? "bg-white text-slate-900 font-semibold shadow-2xs"
+                  onClick={() => setSecondaryTab("library")}
+                  className={`px-2.5 py-0.5 rounded transition cursor-pointer font-medium ${
+                    secondaryTab === "library"
+                      ? "bg-white text-slate-900 font-bold shadow-2xs"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   Test Library ({testLibrary.length})
                 </button>
               </div>
+
+              <span className="text-[10px] text-slate-400 font-mono">
+                {secondaryTab === "history" ? "Click to inspect" : "On-demand execution"}
+              </span>
             </div>
-          </div>
 
-          {/* Central Scrollable Content Area */}
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-            {/* --------------------------------------------------------------- */}
-            {/* "WHY WAS THIS TEST SELECTED?" PANEL */}
-            {/* --------------------------------------------------------------- */}
-            {campaign?.next_test_recommendation && campaign.status !== "COMPLETED" ? (
-              <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/50 border border-blue-200 rounded-lg p-3.5 flex flex-col gap-2.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                    <span className="text-[11px] font-bold text-blue-900 uppercase font-mono tracking-wider">
-                      SYSTEM-SELECTED NEXT TEST
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-blue-100 text-blue-800 font-semibold border border-blue-200">
-                      {campaign.next_test_recommendation.category}
-                    </span>
+            {/* Subtab Content: Test History */}
+            {secondaryTab === "history" && (
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 text-xs">
+                {executedCount === 0 ? (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">
+                    No tests executed yet.
                   </div>
-                  <span className="text-[10px] font-mono text-blue-700 bg-white/70 px-2 py-0.5 rounded border border-blue-100 font-medium">
-                    Confidence: {campaign.next_test_recommendation.confidence}
-                  </span>
-                </div>
+                ) : (
+                  campaign?.executed_tests.map((t, idx) => {
+                    const isSelected = selectedTestIndex === idx;
+                    const isPass = t.status === "PASSED";
 
-                <div className="flex flex-col gap-1">
-                  <h4 className="text-sm font-bold text-slate-900">
-                    {campaign.next_test_recommendation.name}
-                  </h4>
-                  <p className="text-xs text-slate-700 leading-relaxed">
-                    <strong>Selection Rationale:</strong> {campaign.next_test_recommendation.reason}
-                  </p>
-                </div>
+                    return (
+                      <div
+                        key={`${t.test_id}-${t.sequence_number}`}
+                        onClick={() => setSelectedTestIndex(idx)}
+                        className={`p-2 rounded border flex items-center justify-between transition cursor-pointer text-xs ${
+                          isSelected
+                            ? "bg-blue-50 border-blue-300 font-semibold"
+                            : "bg-slate-50/60 hover:bg-slate-100 border-slate-200 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                            isPass ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                          }`}>
+                            {isPass ? "✓" : "✗"}
+                          </span>
+                          <span className="truncate">{t.name}</span>
+                        </div>
 
-                {/* Evidence Chips */}
-                {campaign.next_test_recommendation.evidence.length > 0 && (
-                  <div className="flex flex-col gap-1.5 pt-1">
-                    <span className="text-[10px] font-bold uppercase text-slate-500 font-mono">
-                      Empirical Evidence Base:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {campaign.next_test_recommendation.evidence.map((ev, idx) => (
                         <span
-                          key={idx}
-                          className="text-[11px] bg-white border border-blue-200 text-blue-900 px-2.5 py-1 rounded font-medium shadow-2xs flex items-center gap-1.5"
+                          className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold shrink-0 ${
+                            isPass ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                          }`}
                         >
-                          <span className="text-blue-600">✓</span>
-                          <span>{ev}</span>
+                          {isPass ? "PASS" : "FAIL"}
                         </span>
-                      ))}
-                    </div>
-                  </div>
+                      </div>
+                    );
+                  })
                 )}
-              </div>
-            ) : campaign?.status === "COMPLETED" ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3.5 flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-6 h-6 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold">
-                    ✓
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-emerald-950">
-                      Test Campaign Successfully Completed
-                    </h4>
-                    <p className="text-[11px] text-emerald-800">
-                      {campaign.summary || "All recommended tests executed and analyzed."}
-                    </p>
-                  </div>
-                </div>
-
-                {campaign.failure_handoff && (
-                  <button
-                    onClick={handleRunFullExperiment}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <span>Inspect Causal Signature</span>
-                    <span>→</span>
-                  </button>
-                )}
-              </div>
-            ) : null}
-
-            {/* --------------------------------------------------------------- */}
-            {/* FAILURE HANDOFF CARD (If Failure Isolated) */}
-            {/* --------------------------------------------------------------- */}
-            {campaign?.failure_handoff && (
-              <div className="bg-amber-50/70 border border-amber-300 rounded-lg p-3.5 flex flex-col gap-2.5 shadow-2xs">
-                <div className="flex items-center justify-between border-b border-amber-200 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                    <span className="text-xs font-bold text-amber-950 uppercase font-mono">
-                      FAILURE ISOLATION HANDOFF READY (MODULE 3/4)
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">
-                    Target: {campaign.failure_handoff.recommended_diagnosis_target || "Link Failure"}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-mono block">Suspected Egress Point:</span>
-                    <span className="font-bold text-slate-900 font-mono">
-                      Node {campaign.failure_handoff.drop_node} (Link {campaign.failure_handoff.drop_link})
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-mono block">Unaffected Operational Subnets:</span>
-                    <span className="font-bold text-emerald-800 font-mono">
-                      {campaign.failure_handoff.isolated_healthy_branches.join(", ") || "None"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-[11px] text-amber-900 italic">
-                    Empirical data packaged for causal dependency reduction and deterministic reproduction.
-                  </span>
-                  <button
-                    onClick={handleRunFullExperiment}
-                    disabled={isRunningExperiment}
-                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <span>Hand Off to Failure Diagnosis</span>
-                    <span>→</span>
-                  </button>
-                </div>
               </div>
             )}
 
-            {/* --------------------------------------------------------------- */}
-            {/* SUBTAB 1: CAMPAIGN PROGRESSION */}
-            {/* --------------------------------------------------------------- */}
-            {activeTab === "campaign" ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase font-mono tracking-wider">
-                    Sequential Test Pipeline ({campaign?.executed_tests.length || 0} executed)
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    Click any test to inspect detailed observations
-                  </span>
-                </div>
-
-                {campaign?.executed_tests.length === 0 ? (
-                  <div className="p-8 border border-dashed border-slate-200 rounded-lg text-center text-slate-400 text-xs flex flex-col items-center gap-2">
-                    <p className="font-medium text-slate-600">No tests executed yet.</p>
-                    <p className="text-[11px]">
-                      Click <strong>"Execute Next Test"</strong> to run the system-recommended baseline probe.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {campaign?.executed_tests.map((t, idx) => {
-                      const isSelected = selectedTestIndex === idx;
-                      return (
-                        <div
-                          key={`${t.test_id}-${t.sequence_number}`}
-                          onClick={() => setSelectedTestIndex(idx)}
-                          className={`p-3 rounded-lg border transition cursor-pointer ${
-                            isSelected
-                              ? "bg-blue-50/50 border-blue-300 shadow-2xs"
-                              : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <span className="font-mono text-xs text-slate-400 font-bold">
-                                #{String(t.sequence_number).padStart(2, "0")}
-                              </span>
-                              <span className="font-bold text-xs text-slate-900">
-                                {t.name}
-                              </span>
-                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-semibold border border-slate-200">
-                                {t.category}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
-                                  t.status === "PASSED"
-                                    ? "bg-emerald-100 text-emerald-800"
-                                    : "bg-rose-100 text-rose-800"
-                                }`}
-                              >
-                                {t.status}
-                              </span>
-                              <span className="text-[10px] font-mono text-slate-400">
-                                {t.duration_ms}ms
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Expanded Result Details */}
-                          {isSelected && (
-                            <div className="mt-2.5 pt-2.5 border-t border-slate-200/70 flex flex-col gap-2 text-xs animate-in fade-in duration-100">
-                              <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-                                <div>
-                                  <span className="text-slate-400 block text-[10px]">Expected:</span>
-                                  <span className="text-slate-700">{t.expected_result}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block text-[10px]">Actual Observation:</span>
-                                  <span className={t.failure_detected ? "text-rose-700 font-bold" : "text-emerald-700 font-bold"}>
-                                    {t.actual_result}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {t.observations.length > 0 && (
-                                <div className="bg-slate-50 border border-slate-200 rounded p-2 flex flex-col gap-1 text-[11px]">
-                                  <span className="text-[10px] font-bold text-slate-500 uppercase font-mono">
-                                    Observations:
-                                  </span>
-                                  <ul className="list-disc list-inside space-y-0.5 text-slate-700 font-mono text-[10px]">
-                                    {t.observations.map((obs, oIdx) => (
-                                      <li key={oIdx}>{obs}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-
-                              {t.follow_up_recommendations.length > 0 && (
-                                <div className="text-[10px] text-blue-900 bg-blue-50/70 border border-blue-100 rounded px-2.5 py-1.5">
-                                  <strong>Follow-up:</strong> {t.follow_up_recommendations.join(" ")}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* --------------------------------------------------------------- */
-              /* SUBTAB 2: TEST LIBRARY (For Manual Test Execution) */
-              /* --------------------------------------------------------------- */
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase font-mono tracking-wider">
-                    Available Network Tests
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    Execute on-demand tests against active topology
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {testLibrary.map((libTest) => (
-                    <div
-                      key={libTest.test_id}
-                      className="p-3 bg-white border border-slate-200 rounded-lg flex flex-col justify-between gap-2.5 hover:border-blue-300 transition shadow-2xs"
-                    >
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900">
-                            {libTest.name}
-                          </span>
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-semibold border border-slate-200">
-                            {libTest.category}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-600 leading-snug">
-                          {libTest.purpose}
-                        </p>
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          Target: {selectedSource} ➔ {selectedDestination}
-                        </span>
-                        <button
-                          onClick={() => handleExecuteStep(libTest.test_id)}
-                          disabled={isLoading}
-                          className="px-2.5 py-1 bg-slate-50 hover:bg-blue-50 text-blue-700 border border-slate-200 hover:border-blue-200 rounded font-semibold text-[11px] transition cursor-pointer flex items-center gap-1"
-                        >
-                          <span>Run Test</span>
-                          <span>→</span>
-                        </button>
-                      </div>
+            {/* Subtab Content: Test Library (All 6 Network Tests) */}
+            {secondaryTab === "library" && (
+              <div className="flex-1 overflow-y-auto p-2 space-y-1.5 text-xs">
+                {testLibrary.map((libTest) => (
+                  <div
+                    key={libTest.test_id}
+                    className="p-2 bg-slate-50 border border-slate-200 rounded flex items-center justify-between gap-2 hover:border-slate-300 transition"
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-semibold text-slate-900 truncate">
+                        {libTest.name}
+                      </span>
+                      <span className="text-[10px] text-slate-500 truncate">
+                        {libTest.purpose}
+                      </span>
                     </div>
-                  ))}
-                </div>
+
+                    <button
+                      onClick={() => handleExecuteStep(libTest.test_id)}
+                      disabled={isLoading}
+                      className="px-2 py-1 bg-white hover:bg-blue-50 text-blue-700 border border-slate-200 hover:border-blue-300 rounded font-semibold text-[10px] shrink-0 transition cursor-pointer"
+                    >
+                      Run ➔
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
